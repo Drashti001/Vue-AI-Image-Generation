@@ -127,6 +127,13 @@ import {
   freeServices,
 } from "../utils/availableImageGenerator";
 
+// Define the expected result type for consistency
+interface GenerationResult {
+  url: string | null;
+  service: string;
+  success: boolean;
+}
+
 export default defineComponent({
   name: "FreeAIImageGenerator",
   setup() {
@@ -156,25 +163,35 @@ export default defineComponent({
 
       try {
         const startTime = Date.now();
-        let result;
+        let result: GenerationResult | null = null;
 
         if (selectedService.value === "auto") {
-          result = await generateImagePollinations(prompt.value);
+          // generateImagePollinations returns string | null, so we need to wrap it
+          const urlResult = await generateImagePollinations(prompt.value);
+          result = {
+            url: urlResult,
+            service: "pollinations",
+            success: !!urlResult,
+          };
         } else {
           const serviceFunc =
             freeServices[selectedService.value as keyof typeof freeServices];
-          const url = await serviceFunc(prompt.value);
-          result = {
-            url,
-            service: selectedService.value,
-            success: !!url,
-          };
+
+          if (serviceFunc) {
+            const url = await serviceFunc(prompt.value);
+            result = {
+              url: typeof url === "string" ? url : null,
+              service: selectedService.value,
+              success: !!url,
+            };
+          }
         }
 
         const endTime = Date.now();
         generationTime.value = endTime - startTime;
 
-        if (result.url) {
+        // Check if result exists and has a valid URL
+        if (result && result.url) {
           imageUrl.value = result.url;
           generationInfo.value = result.service;
           imageLoading.value = true;
@@ -275,8 +292,10 @@ export default defineComponent({
 
     // Fallback method to download from URL
     const downloadFromUrl = async () => {
+      if (!imageUrl.value) return;
+
       try {
-        const response = await fetch(imageUrl.value!, {
+        const response = await fetch(imageUrl.value, {
           mode: "cors",
           headers: {
             Accept: "image/*",
@@ -293,7 +312,7 @@ export default defineComponent({
         console.error("Fetch download error:", fetchError);
         // Final fallback - try direct link download
         const link = document.createElement("a");
-        link.href = imageUrl.value!;
+        link.href = imageUrl.value;
         link.download = generateFilename();
         link.target = "_blank";
         link.rel = "noopener noreferrer";
